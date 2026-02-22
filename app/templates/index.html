@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FortiGate AI Log Analyzer</title>
+    <style>
+        body {
+            font-family: Arial;
+            background: #0f172a;
+            color: white;
+            padding: 40px;
+        }
+        textarea {
+            width: 100%;
+            height: 300px;
+            background: #1e293b;
+            color: white;
+            border: none;
+            padding: 15px;
+        }
+        button {
+            padding: 12px 25px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+        pre {
+            background: #1e293b;
+            padding: 20px;
+            margin-top: 30px;
+            white-space: pre-wrap;
+        }
+        .card {
+            background: #1e293b;
+            padding: 16px;
+            margin-top: 20px;
+        }
+        .label {
+            font-weight: 700;
+            color: #93c5fd;
+        }
+        ul {
+            margin-top: 6px;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>FortiGate AI Log Analyzer</h1>
+
+<textarea id="logs" placeholder="Paste FortiGate logs here..."></textarea>
+<br>
+<button onclick="analyze()">Analyze Logs</button>
+
+<div class="card" id="result" style="display:none;">
+    <div><span class="label">Issue:</span> <span id="issue_summary"></span></div>
+    <div><span class="label">Severity:</span> <span id="severity"></span></div>
+    <div><span class="label">Root Cause:</span> <span id="root_cause"></span></div>
+    <div><span class="label">Action Required:</span> <span id="action_required"></span></div>
+    <div><span class="label">Affected Hosts:</span> <span id="affected_hosts"></span></div>
+    <div><span class="label">Firewall Policy:</span> <span id="firewall_policy"></span></div>
+    <div><span class="label">Confidence:</span> <span id="confidence_score"></span>%</div>
+
+    <div class="label">Recommendations</div>
+    <ul id="recommendations"></ul>
+
+    <div class="label">Next CLI Checks</div>
+    <ul id="next_cli_checks"></ul>
+
+    <div class="label">Related Log Lines</div>
+    <pre id="related_log_lines"></pre>
+</div>
+
+<script>
+async function analyze() {
+    const logs = document.getElementById("logs").value;
+
+    const response = await fetch("/analyze", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({logs})
+    });
+
+    const data = await response.json();
+
+    document.getElementById("result").style.display = "block";
+    document.getElementById("issue_summary").textContent = data.issue_summary || "unknown";
+    document.getElementById("severity").textContent = data.severity || "unknown";
+    document.getElementById("root_cause").textContent = data.root_cause || "unknown";
+    document.getElementById("action_required").textContent = data.action_required || "unknown";
+    document.getElementById("affected_hosts").textContent = (data.affected_hosts || []).join(", ") || "none";
+    document.getElementById("firewall_policy").textContent = data.firewall_policy || "unknown";
+    document.getElementById("confidence_score").textContent = data.confidence_score ?? "0";
+
+    const recommendationsEl = document.getElementById("recommendations");
+    recommendationsEl.innerHTML = "";
+    (data.recommendations || []).forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        recommendationsEl.appendChild(li);
+    });
+
+    const nextChecksEl = document.getElementById("next_cli_checks");
+    nextChecksEl.innerHTML = "";
+    (data.next_cli_checks || []).forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        nextChecksEl.appendChild(li);
+    });
+
+    document.getElementById("related_log_lines").textContent = (data.related_log_lines || []).join("\n");
+}
+</script>
+
+</body>
+</html>
