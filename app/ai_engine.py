@@ -2,6 +2,9 @@ from google import genai
 from app.config import GEMINI_API_KEY, GEMINI_MODEL
 import json
 import re
+import logging
+
+logger = logging.getLogger("fortigate_ai")
 
 DEFAULT_OUTPUT = {
     "issue_summary": "Unable to determine exact issue from provided logs.",
@@ -28,7 +31,17 @@ DEFAULT_OUTPUT = {
 
 KEYS = set(DEFAULT_OUTPUT.keys())
 
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+def _create_client():
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        return genai.Client(api_key=GEMINI_API_KEY)
+    except Exception:
+        logger.exception("Failed to initialize Gemini client; fallback mode will be used")
+        return None
+
+
+client = _create_client()
 
 SYSTEM_PROMPT = """
 You are a senior FortiGate network security engineer.
@@ -73,6 +86,19 @@ def _extract_json(text_output: str):
         text_output = text_output[start:end + 1]
 
     return json.loads(text_output)
+
+
+def _infer_firewall_policy(logs: str) -> str:
+    policy_patterns = [
+        r"policyid=(\d+)",
+        r"policy\s*id\s*[:=]\s*(\d+)",
+        r"policy\s*(\d+)"
+    ]
+    for pattern in policy_patterns:
+        match = re.search(pattern, logs, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return "unknown"
 
 
 def _normalize_output(parsed: dict):
@@ -121,6 +147,11 @@ def _heuristic_analysis(logs: str):
             "Validate gateway reachability and route priority/distance.",
             "Check asymmetric routing and source validation settings."
         ]),
+        (r"tcp\s*rst|reset", "Connection is being actively reset by one endpoint or intermediate device.", "medium", [
+            "Identify which side sends the RST using packet direction and interface mapping.",
+            "Review server-side service logs and application listener status.",
+            "Validate security profiles and upstream controls that may terminate sessions."
+        ]),
         (r"retransmission|duplicate\s+ack|out\s+of\s+order|timeout", "Packet loss or unstable path likely causing TCP instability.", "medium", [
             "Check interface errors, MTU/MSS settings, and WAN quality.",
             "Test path stability and packet loss between endpoints.",
@@ -146,6 +177,7 @@ def _heuristic_analysis(logs: str):
     ip_matches = re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", logs)
     output["affected_hosts"] = sorted(list(set(ip_matches)))[:6]
     output["related_log_lines"] = lines[:8]
+    output["firewall_policy"] = _infer_firewall_policy(logs)
     output["confidence_score"] = 60 if output["root_cause"] != DEFAULT_OUTPUT["root_cause"] else 45
 
     return output
@@ -171,6 +203,7 @@ Analyze the following FortiGate CLI packet sniffer logs:
 
     try:
         if client is None:
+            logger.info("Using heuristic mode (Gemini client unavailable)")
             return _heuristic_analysis(logs)
 
         response = client.models.generate_content(
@@ -182,4 +215,5 @@ Analyze the following FortiGate CLI packet sniffer logs:
         parsed = _extract_json(text_output)
         return _normalize_output(parsed)
     except Exception:
+        logger.exception("AI analysis failed; returning heuristic analysis")
         return _heuristic_analysis(logs)

@@ -1,87 +1,165 @@
-# FortiGate AI Troubleshooter
+# NetOps Multi-Tool Dashboard
 
-Analyze FortiGate CLI packet sniffer logs and get:
-- likely issue summary
-- root cause
-- severity
-- actionable fix recommendations
-- next FortiGate CLI commands to verify/fix
+Multi-tool web application for network operations and security diagnostics with a single-page dashboard.
 
-## 1) Prerequisites
+Included tool modules:
+- DNS Tools
+- Network Scanner (nmap-like behavior)
+- IP Calculator
+- Port Scanner
+- Security Tools
+- Subnet Visualizer
+- Packet Analyzer (future-ready placeholder)
 
-Install these first:
-- Python 3.10+ (recommended 3.11 or newer)
+Legacy FortiGate AI analysis endpoint remains available at `POST /analyze`.
+
+---
+
+## 1) Quick Start
+
+### Prerequisites
+- Python 3.10+ (recommended 3.11+)
 - `pip`
-- A Gemini API key
+- Optional: Gemini API key
 
-## 2) Clone the project
+### Install (Windows PowerShell)
 
 ```bash
-git clone <your-repo-url>
-cd fortigate-ai
-```
-
-## 3) Create a virtual environment
-
-### Windows (PowerShell)
-```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-### Linux / macOS
+### Install (Linux/macOS/WSL)
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-## 4) Install dependencies
+If you get `externally-managed-environment` on Linux/WSL:
 
 ```bash
-pip install -r requirements.txt
+sudo apt update
+sudo apt install -y python3-venv python3-full
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-## 5) Configure environment variables
+Do not use `sudo pip install` and avoid `--break-system-packages` unless you intentionally want to modify system Python.
 
-Create or edit `.env` in the project root:
+### Configure
+
+Create `.env` in project root:
 
 ```dotenv
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_key_here
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
-> Important: Never commit real API keys to GitHub.
-
-## 6) Run the application
-
-From the project root (`fortigate-ai`):
+### Run
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-You should see server output with a local URL.
+Open: `http://127.0.0.1:8000`
 
-## 7) Open in browser
+The dashboard is single-page and switches modules without full page reload.
 
-Open:
-- http://127.0.0.1:8000
+---
 
-Paste FortiGate packet sniffer logs and click **Analyze Logs**.
+## 2) Main Dashboard Modules
 
-## 8) API usage (optional)
+- **DNS Tools**: A/AAAA/MX/NS/TXT/CNAME lookup, reverse DNS, WHOIS, propagation checks, domain IP resolve
+- **Network Scanner**: host discovery, async TCP scanning, basic banner/service hints, OS guess heuristic
+- **IP Calculator**: subnet math, CIDR conversion, network/broadcast/usable range, binary view, VLSM plan
+- **Port Scanner**: quick host port state checks
+- **Security Tools**: banner risk analyzer, SSL cert checker, hash generator, password strength checker
+- **Subnet Visualizer**: compact subnet boundary visualization
 
-### Endpoint
-- `POST /analyze`
+## 3) API Endpoints
+
+- `GET /` → web UI
+- `GET /health` → service metadata and AI mode status
+- `POST /analyze` → FortiGate packet-sniffer analysis
+
+### DNS
+- `POST /api/dns/lookup`
+- `POST /api/dns/reverse`
+- `POST /api/dns/whois`
+- `POST /api/dns/propagation`
+- `POST /api/dns/resolve-ip`
+
+### Network Scanner
+- `POST /api/network/scan/start`
+- `GET /api/network/scan/{job_id}`
+
+### IP Calculator
+- `POST /api/ip/calculate`
+- `POST /api/ip/cidr-mask`
+- `POST /api/ip/vlsm`
+
+### Security
+- `POST /api/security/port-status`
+- `POST /api/security/banner-analyze`
+- `POST /api/security/ssl-check`
+- `POST /api/security/hash`
+- `POST /api/security/password-strength`
 
 ### Example request
+
 ```bash
 curl -X POST "http://127.0.0.1:8000/analyze" \
   -H "Content-Type: application/json" \
   -d "{\"logs\":\"id=20085 trace_id=123 func=print_pkt_detail line=5899 msg=\\\"vd-root:0 received a packet (proto=6, 10.1.1.10:51514->172.16.20.15:443)\\\"\"}"
 ```
 
-## 9) Project structure
+---
+
+## 4) Operational Notes
+
+- Input shorter than 20 characters is rejected (`400`).
+- If Gemini parsing fails, the service automatically falls back to heuristic analysis.
+- `confidence_score` is normalized to `0-100`.
+- Severity is normalized to one of: `low`, `medium`, `high`, `critical`.
+- Network scans are asynchronous and expose progress through scan job status.
+- Network scanner limits: max 1024 hosts per scan and max 1024 ports per scan request.
+- Security module is educational and defensive only; no exploit tooling is included.
+
+---
+
+## 5) Recommended Next Steps (Senior Network Ops Track)
+
+### Phase 1: Reliability and Control (Do first)
+1. Add request/response logging with a correlation ID per analysis.
+2. Add rate limiting (e.g., per IP) for `/analyze`.
+3. Add basic auth or SSO before exposing beyond localhost.
+4. Add unit tests for regex heuristics and JSON normalization.
+
+### Phase 2: FortiGate Domain Accuracy
+1. Expand parsing for policy ID, interface pair, NAT mode, and session state clues.
+2. Add a knowledge map for common FortiGate failure signatures:
+   - policy deny
+   - RPF/route mismatch
+   - asymmetric return path
+   - SNAT/VIP mismatch
+   - MSS/MTU fragmentation issues
+3. Add confidence weighting by evidence count, not only pattern hit.
+
+### Phase 3: Production Readiness
+1. Containerize service and deploy behind a reverse proxy.
+2. Add centralized logs and metrics (`/health`, latency, error rate, fallback rate).
+3. Add audit-safe log handling (sanitize sensitive IP/user data if required).
+4. Introduce regression test corpus using anonymized real incident snippets.
+
+---
+
+## 6) Project Layout
 
 ```text
 fortigate-ai/
@@ -89,7 +167,21 @@ fortigate-ai/
 │   ├── main.py
 │   ├── ai_engine.py
 │   ├── models.py
+│   ├── tool_models.py
 │   ├── config.py
+│   ├── routers/
+│   │   ├── dns_tools.py
+│   │   ├── network_tools.py
+│   │   ├── ip_tools.py
+│   │   └── security_tools.py
+│   ├── services/
+│   │   ├── dns_service.py
+│   │   ├── network_scan_service.py
+│   │   ├── ip_calc_service.py
+│   │   └── security_service.py
+│   ├── static/
+│   │   ├── css/dashboard.css
+│   │   └── js/dashboard.js
 │   └── templates/
 │       └── index.html
 ├── requirements.txt
@@ -97,26 +189,26 @@ fortigate-ai/
 └── README.md
 ```
 
-## 10) Troubleshooting
+---
 
-### `Import ... could not be resolved`
-- Ensure your virtual environment is activated.
+## 7) Troubleshooting
+
+### Missing Gemini key
+- Keep running in heuristic mode, or set `GEMINI_API_KEY` in `.env`.
+
+### Analysis call fails
+- Check `GET /health`.
+- Validate input has meaningful FortiGate packet-sniffer lines.
+- Verify internet/API access if Gemini mode is enabled.
+
+### Import issues
+- Ensure virtual environment is active.
 - Reinstall dependencies:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-### `GEMINI_API_KEY` missing or invalid
-- Confirm `.env` exists in the project root.
-- Check key format and permissions.
-
-### App starts but analysis fails
-- Verify internet access for Gemini API calls.
-- Try a different model in `.env` using `GEMINI_MODEL`.
-- Provide more complete packet sniffer logs (both directions if possible).
-
----
-
-If you plan to publish to GitHub, add `.env` to `.gitignore` before pushing.
-# fgAI
+### `externally-managed-environment` (PEP 668)
+- This means you are installing into system Python (common in Debian/Ubuntu/WSL).
+- Create and activate a virtual environment, then install using `python -m pip`.
